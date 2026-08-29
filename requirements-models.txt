@@ -1,0 +1,21 @@
+# Everything the detectors need, on top of the repo's own requirements.txt.
+#
+# If you already ran `pip install -r requirements.txt` in aml-sim, the only
+# genuinely new line here is torch.
+
+numpy>=1.24
+pandas>=2.0
+networkx>=3.0
+scikit-learn>=1.3
+matplotlib>=3.7
+PyYAML>=6.0
+joblib>=1.3
+
+# The GNN. CPU-only is plenty for this dataset size — on Linux/Windows the
+# default PyPI wheel pulls ~2.5 GB of CUDA libraries you do not need, so unless
+# you have an NVIDIA GPU, install the CPU build instead:
+#
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#
+# On macOS `pip install torch` is already CPU/MPS and needs no extra flags.
+torch>=2.0
