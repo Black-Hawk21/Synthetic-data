@@ -1,9 +1,0 @@
-pattern,n_episodes,episode_recall,median_amount
-rapid_pass_through,6,0.6667,9050843.025
-smurfing,3,0.6667,1998907.19
-dormant_activation,4,0.75,976744.965
-circular_flow,4,1.0,1868784.135
-fan_out,4,1.0,2145740.79
-fan_in,4,1.0,777404.85
-mule_network,3,1.0,3190850.94
-layering_chain,8,1.0,4630917.975
