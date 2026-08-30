@@ -1,249 +1,215 @@
-# Synthetic Money-Laundering Dataset Generator
+# AI Defense Lab — Social Engineering & Phishing at Scale
 
-Generates a synthetic financial ecosystem, injects money-laundering typologies into it,
-turns the result into a transaction **graph**, and flattens that graph into **modelling
-tables** you can train a detector on.
+Mastercard Innovation Challenge 2026 — Red team (attack generator) + Blue team (detector)
+for GenAI-powered social engineering / phishing targeting payments.
 
-The design goal is *not* a big CSV. It is a dataset where laundering is genuinely hard to
-separate from legitimate behaviour, so that a model has to learn money-movement behaviour
-instead of a threshold on `amount`.
+## Structure
 
 ```
-population of accounts  ->  legitimate traffic  ->  injected episodes
-                                                          |
-                          transaction graph  <-------------
-                                   |
-                    account features + labels  ->  detector  ->  per-typology recall
-                                                                        |
-                                                    Red Team reads the misses and
-                                                    raises `difficulty` -----------+
+project/
+├── app.py                    # Streamlit demo dashboard (live detector + charts)
+├── data/
+│   ├── raw/                 # public datasets (SMS spam collection, manually-added phishing email CSVs)
+│   └── generated/           # synthetic output + normalized holdout data (jsonl)
+├── generator/
+│   ├── schema.py            # canonical sample schema
+│   ├── personas.py          # Faker-based synthetic victim persona generator
+│   ├── templates.py         # attack subtype prompt templates
+│   ├── llm_client.py        # Groq API wrapper (rate limiting, refusal detection/retry)
+│   ├── generate_static.py   # batch generates email/SMS phishing + legit samples
+│   ├── generate_conversational.py  # multi-turn vishing/chat attacker vs victim-sim
+│   └── prepare_holdout.py   # downloads/normalizes public real-world data as a holdout set
+├── detector/
+│   ├── dataset_utils.py     # loads + merges data/generated/*.jsonl (train pool vs holdout)
+│   ├── train_baseline.py    # TF-IDF + Logistic Regression baseline detector
+│   └── artifacts/           # saved model + vectorizer (created on first run)
+└── eval/                    # baseline_metrics.json (created on first run)
 ```
 
----
+## Setup
 
-## Quick start
+Uses Groq's free, OpenAI-compatible API (open-weight models -- `openai/gpt-oss-120b` by default --
+running on Groq's LPU hardware, no credit card needed).
 
 ```bash
-pip install -r requirements.txt
-
-python run.py all                      # full pipeline, writes to data/
-python run.py all --accounts 4000 --days 45     # smaller/faster run
+pip install requests faker --break-system-packages
 ```
 
-Roughly 25 seconds and ~1.1M transactions at the default 10,000 accounts / 90 days.
+1. Sign in at https://console.groq.com
+2. Go to "API Keys" -> create a new key
+3. `export GROQ_API_KEY=gsk_...`
 
-Individual stages:
+Free tier is roughly 25-30 requests/minute and ~1,000/day (check
+console.groq.com/settings/limits for current numbers) -- `generator/llm_client.py`
+client-side rate-limits itself to stay under that, so batch generation will just
+run a bit slowly rather than erroring out. To swap the model (e.g. to a smaller/faster
+one if you're burning through daily quota), change `MODEL` at the top of `llm_client.py`
+to any model id from https://console.groq.com/docs/models.
+
+## Run generation
 
 ```bash
-python run.py generate --accounts 20000 --days 120 --difficulty 0.8
-python run.py features                 # behavioural + graph features
-python run.py graph --episode L000012  # draw one episode's money flow
-python run.py train                    # baseline detector + per-typology recall
-python run.py redteam --levels 0,0.25,0.5,0.75,1.0
+cd generator
+python generate_static.py --n-per-cell 2         # sanity check first: 5 subtypes x 2 channels x 3 difficulties x 2 (fraud+legit) = 120 API calls
+python generate_static.py --n-per-cell 10        # scale up once output looks good: ~600 calls
+python generate_conversational.py --n-dialogues 20 --max-turns 5  # up to ~200 calls (20 dialogues x ~5 turns x 2 speakers)
 ```
 
----
+`--n-per-cell` multiplies fast: it's `n * subtypes(5) * channels(2) * difficulties(3) * 2` (fraud+legit)
+total API calls. Always start at `--n-per-cell 2` to check output quality/prompt correctness
+before scaling up and burning API credits.
 
-## What lands in `data/`
+Output lands in `data/generated/phishing_synthetic.jsonl` and
+`data/generated/conversational_synthetic.jsonl`, both following the schema in `schema.py`.
 
-| File | Grain | What it is |
-|---|---|---|
-| `transactions.csv` | one transaction | the raw ledger — sender, receiver, amount, timestamp, channel, countries |
-| `accounts.csv` | one account | archetype, KYC, age, plus account-level ground truth |
-| `episodes.csv` | one episode | a coordinated behaviour: type, window, total amount, participant count |
-| `episode_members.csv` | account × episode | which account played which role in which episode |
-| `edges.csv` | account pair | the aggregated transaction graph as a weighted edge list |
-| `transaction_graph.graphml` | — | the same graph for Gephi / networkx / PyG |
-| `account_features.csv` | one account | ~70 engineered features + labels — **this is the modelling table** |
-| `evaluation/` | — | baseline scores, per-typology recall, missed episodes, feature importance |
-| `figures/` | — | episode plots, amount-overlap check, recall chart |
-| `manifest.json` | — | the exact config that produced this dataset |
+**Quality control, important:** `gpt-oss-120b` sometimes refuses "write a phishing message"
+requests outright, even with the red-team/defensive framing in the system prompt. `llm_client.py`
+detects these refusals and retries automatically (with a reinforced prompt) rather than saving
+the refusal text as if it were a real labeled sample -- if you see a run finish with the exact
+error text `model refused: ...` in the error log, that's this working as intended, not a bug.
+`generate_static.py` also drops exact-duplicate outputs and reports near-duplicate pairs at the
+end of a run, since a small persona pool can otherwise produce repetitive text.
 
-Full column-by-column reference: [`docs/DATA_DICTIONARY.md`](docs/DATA_DICTIONARY.md).
-
----
-
-## The design decisions that matter
-
-**Episodes, not flagged rows.** The unit of ground truth is a *laundering episode* — a set
-of transactions belonging to one coordinated behaviour, with a start, an end, participants
-and roles. Labelling transaction #18372 in isolation throws away the structure that makes
-laundering detectable, and makes evaluation meaningless: catching 1 of 40 transactions in
-a chain is not the same as catching the chain.
-
-**Eight laundering typologies, not one `fraud=1` class.**
-
-| Pattern | Shape | What it stresses |
-|---|---|---|
-| `layering_chain` | A → B → C → D | multi-hop path tracing |
-| `circular_flow` | A → B → C → A | cycle / SCC detection |
-| `rapid_pass_through` | in, then straight out | holding time |
-| `smurfing` | many transfers under a threshold | aggregate vs per-transaction view |
-| `fan_out` | one → many | out-degree bursts |
-| `fan_in` | many → one | in-degree bursts |
-| `mule_network` | two mule layers | multi-hop network structure |
-| `dormant_activation` | idle account wakes up | behavioural deviation over time |
-
-**Every typology has a legitimate twin.** A dataset with only suspicious fan-outs teaches a
-model that fan-out means crime. So the generator also injects `payroll_fanout`,
-`marketplace_fanin`, `supplier_passthrough`, `treasury_cycle` and `installment_split` —
-structurally similar, labelled clean. They are the hard negatives, and in the default run
-they account for **~60–80% of the baseline model's false positives**, which is exactly what
-they are for.
-
-**Amounts overlap on purpose.** Episode totals are anchored on the population-wide amount
-distribution and capped by what the source account plausibly moves, not drawn from some
-"big number" range. In the default run the laundering median transaction is ₹38k against a
-legitimate median of ₹5.5k — elevated, but sitting well inside the legitimate spread.
-`figures/amount_overlap.png` is the check; if those two histograms ever separate cleanly,
-the dataset is broken.
-
-**Laundering is run by a bounded network.** Mules, shells and sources are drawn from
-restricted pools (`laundering.network.*`) rather than the whole population. This keeps
-suspicious accounts rare and reproduces a real signal: mules get reused across episodes.
-
-**One difficulty knob.** `laundering.difficulty` ∈ [0, 1] moves every pattern between its
-blatant and its subtle form at once — hop counts, holding times, amount splitting,
-threshold-hugging, time-of-day alignment, number of participants.
-
-```
-difficulty 0.0                          difficulty 1.0
-5-hop chain, 30 seconds apart           2-hop chain, spread over days
-smurfs hug 98% of the threshold         amounts scattered at 5-30% of it
-fan-out to 110 accounts, equal splits   fan-out to 14, Dirichlet splits
-transfers at 3am                        transfers inside the account's own routine
-```
-
----
-
-## The Red Team / Blue Team loop
-
-This is the part worth building a hackathon around. Generate, train, find the misses, make
-those typologies harder, regenerate.
+## Public real-world data (train + holdout split)
 
 ```bash
-python run.py redteam --levels 0,0.25,0.5,0.75,1.0
+python prepare_holdout.py --train-fraction 0.7
 ```
 
-Each level gets its own dataset in `data/redteam/difficulty_<x>/`, and the sweep summary
-lands in `data/redteam/redteam_sweep.csv`. What you should see is PR-AUC falling as
-difficulty rises — and, more interestingly, *different typologies* failing at different
-points. `evaluation/missed_episodes.csv` lists the false negatives, largest first: those
-are the Red Team's next targets.
+Downloads the classic SMS Spam Collection dataset (real-world spam/ham SMS), and processes any
+phishing-email CSV you've placed in `data/raw/` (e.g. Kaggle's "Phishing Email Dataset" or
+Nazario/Enron) -- then **splits each source 70/30** (stratified by label, fixed seed so it's
+reproducible): 70% goes into `data/generated/real_world_train.jsonl` and joins the training pool
+alongside your synthetic data, 30% stays in `holdout_sms.jsonl`/`holdout_email.jsonl` as a
+genalization check the detector never trains on.
 
-`python run.py train` prints recall per typology at a realistic alert budget (by default,
-an analyst queue of twice the base rate), because an average across typologies hides one
-you cannot see at all.
+**Why split instead of using 100% of it as holdout (which is what earlier versions of this
+script did):** if you train on the exact same data you use to measure real-world generalization,
+the holdout stops meaning anything -- you lose any honest way to tell whether the detector
+generalizes to real text it hasn't seen. Splitting lets you get the real benefit of real training
+data (better real-world recall) without destroying the benchmark that proves it's working.
+`--train-fraction` defaults to 0.7; keep it well under 1.0 so a meaningful holdout remains.
 
----
+## Detector (baseline)
 
-## Layout
-
-```
-aml-sim/
-├── run.py                        # CLI: all | generate | features | graph | train | redteam
-├── config.yaml                   # every knob
-├── amlgen/
-│   ├── config.py                 # defaults + YAML merge + validation
-│   ├── entities.py               # the 8 account archetypes and their parameter ranges
-│   ├── distributions.py          # amount/time/channel sampling primitives
-│   ├── population.py             # accounts, employers, counterparty affinity graph
-│   ├── normal_activity.py        # salaries + organic traffic (the baseline)
-│   ├── ledger.py                 # transaction and episode stores
-│   ├── simulate.py               # end-to-end driver
-│   ├── graphs.py                 # edge aggregation, graph build, GraphML, subgraphs
-│   ├── export.py                 # table writers + run manifest
-│   ├── viz.py                    # episode plots and dataset sanity plots
-│   ├── patterns/
-│   │   ├── base.py               # SimContext: pools, timing, difficulty, commit
-│   │   ├── layering.py           # layering_chain, circular_flow, rapid_pass_through
-│   │   ├── structuring.py        # smurfing, fan_out, fan_in
-│   │   ├── mules.py              # mule_network, dormant_activation
-│   │   ├── lookalikes.py         # the five benign twins
-│   │   └── registry.py           # registry + injection driver
-│   ├── features/
-│   │   ├── account_features.py   # velocity, flow, counterparty, temporal, pass-through
-│   │   ├── graph_features.py     # degree, PageRank, SCC, k-core, clustering, 2-hop
-│   │   └── build.py              # modelling table + leak-safe X/y split
-│   ├── models/baseline.py        # HistGradientBoosting baseline + permutation importance
-│   └── evaluation/metrics.py     # per-typology recall, episode recall, missed episodes
-└── examples/redteam_loop.py      # the loop as a script you can edit
+```bash
+pip install scikit-learn pandas joblib numpy --break-system-packages
+cd detector
+python train_baseline.py
 ```
 
----
+Trains a TF-IDF + Logistic Regression classifier on an 80/20 split of everything in
+`data/generated/` (excluding holdout files), then separately evaluates it against any holdout
+data present. Writes:
 
-## Adding your own typology
+- `detector/artifacts/baseline_model.joblib`, `baseline_vectorizer.joblib` -- the trained model
+- `eval/baseline_metrics.json` -- precision/recall/F1/AUC overall, broken down by
+  `attack_subtype` and `difficulty_tier`, plus false-positive rate on legit messages and the
+  top TF-IDF terms driving fraud vs. legit predictions (useful for the "explainability" part
+  of the report)
 
-Subclass `Pattern`, use the context helpers, register it. That is the whole contract.
+**Read the holdout numbers carefully, not just the test-split numbers.** A model can look
+perfect on our own generated test split (same writing style it trained on) while badly
+generalizing to real-world text -- e.g. in an early run, a baseline trained on ~15 fraud
+examples scored 1.0 F1 on its own test split but only caught 0.1% of real-world spam in the
+SMS holdout. That gap is itself a legitimate finding for the report (and the fix is more/more
+diverse training data, not a better classifier) -- don't just report the test-split numbers
+without the holdout comparison alongside them.
 
-```python
-# amlgen/patterns/mine.py
-from .base import Pattern
+## Detector (stronger model — RoBERTa)
 
-class TradeInvoicing(Pattern):
-    name = "trade_invoicing"
-
-    def run(self, ctx, episode_id):
-        exporter = ctx.shells(1)[0]
-        importer = ctx.sources(1, exclude=[exporter])[0]
-        total = ctx.episode_total(importer, scale=2.0)
-        ts = ctx.window(30 * 86400)
-        txns = [(importer, exporter, ctx.plausible_hour(ts, importer), total)]
-        ctx.commit(episode_id, self.name, "laundering", 1, txns,
-                   {"source": [importer], "beneficiary": [exporter]})
+```bash
+cd detector
+python train_transformer.py --epochs 5 --batch-size 16
 ```
 
-Then add it to `LAUNDERING` in `patterns/registry.py` and to `config.yaml`. Useful helpers
-on `ctx`: `mules(k)`, `shells(k)`, `sources(k)` (bounded network pools), `episode_total()`,
-`hop_delay()`, `retention()`, `plausible_hour()`, `window()`, and `lerp(easy, hard)` to make
-your pattern respond to the difficulty knob.
+Fine-tunes `roberta-base` (or pass `--model-name distilbert-base-uncased` for a lighter/faster
+alternative). **Needs a GPU** -- see `KAGGLE_SETUP.md` for running this on Kaggle's free GPU
+notebooks, which is the easiest path if you don't have local GPU access. Not installed by the
+main `requirements.txt` since `torch`/`transformers` are heavy and only needed for this script.
 
-If your new typology has a plausible legitimate twin, add that too — in `lookalikes.py`,
-with `is_laundering = 0`. It is worth more than another laundering pattern.
+This isn't meant to replace the baseline -- it's meant to catch what the baseline can't. TF-IDF
++ Logistic Regression is already near-perfect on obvious ("naive"/"moderate" difficulty)
+phishing text; RoBERTa's value case is specifically the "adaptive" difficulty tier (messages
+written to avoid obvious trigger words). Compare `eval/roberta_metrics.json` against
+`eval/baseline_metrics.json` -- specifically each one's `breakdown_by_difficulty` -> `adaptive`
+recall -- for the actual finding to put in the report, not just an overall accuracy number.
 
----
+**Small-data warning:** fine-tuning a 125M-parameter model on a few hundred examples can overfit
+and underperform the baseline. If that happens, it's a real result worth reporting (motivates
+"why we needed more synthetic data"), not a failed experiment to hide.
 
-## Modelling notes
+## Adversarial loop (Phase 5 — the "arms race" demo)
 
-`account_features.csv` carries the labels alongside the features. Use the helper rather
-than dropping columns by hand:
-
-```python
-import pandas as pd
-from amlgen.features import model_matrix
-
-features = pd.read_csv("data/account_features.csv")
-X, y = model_matrix(features)      # drops labels and simulator-internal columns
+```bash
+cd detector
+python adversarial_loop.py --generations 3 --n-per-generation 4
 ```
 
-`model_matrix` removes both the label columns and the simulator's own state
-(`baseline_out_per_day`, `monthly_income`, `dormant`, …). Those exist for analysis and
-would leak badly — a real bank does not know an account's ground-truth activity parameters.
-In the raw tables, `episode_id` and `pattern` on `transactions.csv` are ground truth too.
+The core demo for judges: trains a detector, extracts exactly which words it's keying on (its
+`top_fraud_indicator_terms`), has the generator write NEW attacks specifically instructed to
+avoid those words while keeping the same fraudulent intent, measures what fraction evade the
+CURRENT detector (the **evasion rate** — your attack potency metric), retrains on those
+evasions, and repeats. `--n-per-generation` is per fraud subtype (5 subtypes), so `4` means 20
+fraud + 20 matched legit samples generated per round — keep this modest, each generation is a
+full round of live LLM calls.
 
-The baseline is deliberately a plain gradient-boosted tree on account-level features. Two
-obvious directions from there: sequence models over each account's transaction stream, and
-GNNs over `transaction_graph.graphml` — the graph is already there, and the typologies that
-the tabular baseline handles worst (`circular_flow`, `rapid_pass_through`) are exactly the
-ones with the most structure to exploit.
+Uses the TF-IDF+LR baseline throughout, not RoBERTa — retraining every generation needs to be
+fast, and baseline retrains in seconds. This is a separate, complementary story to the
+baseline-vs-RoBERTa comparison, not a replacement for it.
 
----
+Writes `eval/adversarial_loop_metrics.json` with, per generation: the evasion rate against the
+detector it faced, a regression check (does the new detector still catch EARLIER generations'
+evasions, or did it forget them while learning the new pattern?), and holdout performance after
+each retrain. The evasion-rate-by-generation numbers are the headline chart for your demo —
+expect it to start non-trivial and trend down as the detector adapts each round; if it's already
+near-zero on generation 1, your existing training data or holdout results already discussed some of these patterns and the loop won't show much movement — try a higher
+`--generations` count or check `top_terms_faced` per generation to see if the vocabulary is
+actually shifting round to round.
 
-## Limitations, stated plainly
+## Demo dashboard (Streamlit)
 
-Parameters are *plausible*, not calibrated against real bank data — internally coherent
-distributions, INR-denominated, with no attempt to match any real institution's profile.
-There is no cash, no cheques, no FX conversion, no account opening or closing mid-window,
-and no seasonality beyond a weekday effect. Laundering is injected on top of the baseline
-rather than displacing it, so participants carry slightly more volume than they otherwise
-would. Treat results here as a measure of *relative* detector quality across typologies and
-difficulty levels, not as an estimate of real-world performance.
+```bash
+pip install streamlit plotly --break-system-packages
+streamlit run app.py
+```
 
----
+Run from the project root (not from inside `generator/` or `detector/`). Opens a browser dashboard
+with five tabs:
 
-## What's in `sample_data/`
+- **Attack Simulator** — the live "build the attack, then build the defense" demo. Generates a
+  NEW fraud message via the LLM (pick the attack pattern, channel, and optionally **evasion
+  mode**, which targets the current detector's own known weak spots — same mechanism as the
+  Phase 5 loop), then immediately runs it through the trained detector and shows CAUGHT or
+  EVADED. Falls back to pulling a real example from your generated dataset if no `GROQ_API_KEY`
+  is set or the API call fails, so the demo never breaks even without live network access —
+  important for judged presentations where you can't rely on connectivity.
+- **Live Detector** — two-panel attacker/recipient simulation: compose a message on the
+  **Attacker** side, send it, and it arrives in the **Recipient's Inbox** on the other side
+  stamped with the detector's live verdict, confidence, and an expandable breakdown of which
+  words drove the decision. Runs entirely against the saved baseline model locally — no API
+  calls, so it's fast and safe to demo live for judges without depending on network/Groq
+  availability.
+- **Dataset Overview** — live stats on everything in `data/generated/` (counts by subtype,
+  difficulty, channel) plus a sample of actual generated messages.
+- **Model Comparison** — baseline vs RoBERTa metrics side by side, pulled from `eval/*.json`.
+  Gracefully shows a "not yet generated" message for whichever file doesn't exist yet, rather
+  than crashing — so it's safe to run before every phase is finished.
+- **Adversarial Arms Race** — the evasion-rate-by-generation chart from Phase 5, plus the holdout
+  precision/recall trade-off across retraining generations.
 
-A small pre-generated run (1,500 accounts, 30 days, difficulty 0.5) so you can look at the
-schema and the figures before running anything. It is a *scaled-down* dataset — episode
-counts scale with population, so the class balance matches the default run, but the graph
-is far sparser. Regenerate at full size with `python run.py all`.
+Requires at minimum `detector/artifacts/baseline_model.joblib` (from `train_baseline.py`) for the
+Attack Simulator and Live Detector tabs, and `data/generated/*.jsonl` for the Dataset Overview
+tab and the Attack Simulator's fallback path — the other two tabs work with whatever `eval/*.json`
+files happen to exist, including none. `GROQ_API_KEY` is only needed for LIVE generation in the
+Attack Simulator tab; everything else runs fully offline.
+
+## Notes for teammates
+
+- Every sample (yours and theirs) should eventually conform to the same top-level
+  fields (`id`, `text`, `label`, `channel`, `source_topic`) so we can merge datasets
+  across sub-topics before the shared detector/eval stage. See `schema.py`.
+- Keep `attack_subtype` / `difficulty_tier` populated — that's what lets the final
+  report break down detector performance instead of reporting one flat accuracy number.
+- All personas and message content are synthetic (no real PII, no real people/brands
+  used adversarially) — this is red-teaming for defense purposes only.
