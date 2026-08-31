@@ -1,0 +1,51 @@
+# Unified environment for the Streamlit shell and the four modules it hosts
+# in-process (chargeback, account_takeover, phishing, aml).
+#
+# modules/identity is NOT covered here. It runs as its own uvicorn process and
+# pins scikit-learn==1.5.2 / numpy==1.26.4, which cannot coexist with the pins
+# below. Install it separately:
+#     python -m venv modules/identity/.venv
+#     modules/identity/.venv/bin/pip install -r modules/identity/requirements.txt
+#
+#     python -m venv .venv && .venv/bin/pip install -r requirements.txt
+
+# --- shell + UI (shared by all three Streamlit modules) ---
+streamlit>=1.38          # chargeback's floor; st.navigation needs >=1.36
+plotly>=5.23
+
+# --- scientific core ---
+# pandas is held below 3.0: account_takeover and phishing lean on parse_dates,
+# pd.Timedelta windows and crosstab, which 3.x changes.
+pandas>=2.2,<3
+numpy>=1.26,<3
+joblib>=1.3
+
+# scikit-learn is pinned to the version that can load every committed model:
+#   account_takeover/artifacts/{iforest,scaler}.joblib      -> pickled with 1.7.2
+#   phishing/detector/artifacts/baseline_*.joblib           -> pickled with 1.7.2
+#   aml/models/*.joblib                                     -> pickled with 1.8.0
+# 1.8.0 reads all of them (1.7.2 pickles warn but deserialize). The ==1.9.0 pin
+# in modules/aml/requirements.txt is stale -- nothing was trained with it.
+scikit-learn==1.8.0
+
+xgboost>=2.1             # account_takeover: supervised ATO detector
+
+# --- modules/aml ---
+networkx>=3.0
+matplotlib>=3.7
+PyYAML>=6.0
+pyarrow>=12.0            # parquet export only
+
+# --- modules/chargeback (Aegis) ---
+anthropic>=0.34          # optional at runtime; falls back to a mock provider
+pydantic>=2.7
+pillow>=10.4
+requests>=2.32
+python-docx>=1.1         # docs/generate_walkthrough.py only
+python-dotenv>=1.0
+
+# --- modules/phishing ---
+faker>=25.0              # persona generation
+
+# --- tests ---
+pytest>=8.3

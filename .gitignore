@@ -1,7 +1,32 @@
-data/
+# Python
 __pycache__/
 *.pyc
-.ipynb_checkpoints/
 *.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Virtualenvs
 .venv/
+venv/
+
+# Secrets -- copy .env.example to .env and fill in what you need
+.env
+
+# Node (modules/identity/frontend)
+node_modules/
+dist/
+
+# OS
+.DS_Store
+
+# Scratch
 MasterCard/
+
+# NOTE: do NOT add a bare `data/` rule here.
+# A bare `data/` matches at ANY depth, and it is what silently swallowed
+# modules/identity/backend/data/ (the module's own source package) so that the
+# FastAPI backend could not start. Anchor every data rule with a leading slash.
+
+# modules/aml writes its simulator output to modules/aml/data/ (regenerable
+# with `cd modules/aml && python run.py all`).
+/modules/aml/data/
