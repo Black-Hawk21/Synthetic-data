@@ -1,0 +1,95 @@
+{
+  "model_name": "roberta-base",
+  "test_split": {
+    "n": 1528,
+    "precision": 0.9935,
+    "recall": 0.9684,
+    "f1": 0.9808,
+    "roc_auc": 0.999,
+    "confusion_matrix": {
+      "tn": 1050,
+      "fp": 3,
+      "fn": 15,
+      "tp": 460
+    },
+    "false_positive_rate_on_legit": 0.0028,
+    "breakdown_by_subtype": {
+      "account_verification": {
+        "n": 16,
+        "recall_on_fraud": 1.0
+      },
+      "adaptive_conversational": {
+        "n": 13,
+        "recall_on_fraud": 0.9231
+      },
+      "authority_impersonation": {
+        "n": 18,
+        "recall_on_fraud": 1.0
+      },
+      "brand_spoof": {
+        "n": 12,
+        "recall_on_fraud": 1.0
+      },
+      "legit": {
+        "n": 1053,
+        "false_positive_rate": 0.0028
+      },
+      "public_spam": {
+        "n": 380,
+        "recall_on_fraud": 0.9632
+      },
+      "reward_lure": {
+        "n": 16,
+        "recall_on_fraud": 1.0
+      },
+      "urgency_otp": {
+        "n": 20,
+        "recall_on_fraud": 1.0
+      }
+    },
+    "breakdown_by_difficulty": {
+      "adaptive": {
+        "n": 39,
+        "recall_on_fraud": 0.9744
+      },
+      "moderate": {
+        "n": 27,
+        "recall_on_fraud": 1.0
+      },
+      "naive": {
+        "n": 1462,
+        "recall_on_fraud": 0.9658
+      }
+    }
+  },
+  "public_holdout": {
+    "n": 3862,
+    "precision": 0.991,
+    "recall": 0.9901,
+    "f1": 0.9905,
+    "roc_auc": 0.9997,
+    "confusion_matrix": {
+      "tn": 2746,
+      "fp": 10,
+      "fn": 11,
+      "tp": 1095
+    },
+    "false_positive_rate_on_legit": 0.0036,
+    "breakdown_by_subtype": {
+      "legit": {
+        "n": 2756,
+        "false_positive_rate": 0.0036
+      },
+      "public_spam": {
+        "n": 1106,
+        "recall_on_fraud": 0.9901
+      }
+    },
+    "breakdown_by_difficulty": {
+      "naive": {
+        "n": 3862,
+        "recall_on_fraud": 0.9901
+      }
+    }
+  }
+}

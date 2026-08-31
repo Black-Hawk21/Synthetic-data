@@ -1,0 +1,132 @@
+{
+  "test_split": {
+    "n": 2061,
+    "precision": 0.9642,
+    "recall": 0.9597,
+    "f1": 0.9619,
+    "roc_auc": 0.9965,
+    "confusion_matrix": {
+      "tn": 1393,
+      "fp": 23,
+      "fn": 26,
+      "tp": 619
+    },
+    "false_positive_rate_on_legit": 0.0162,
+    "breakdown_by_subtype": {
+      "account_verification": {
+        "n": 19,
+        "recall_on_fraud": 1.0
+      },
+      "adaptive_conversational": {
+        "n": 18,
+        "recall_on_fraud": 0.9444
+      },
+      "authority_impersonation": {
+        "n": 25,
+        "recall_on_fraud": 1.0
+      },
+      "brand_spoof": {
+        "n": 29,
+        "recall_on_fraud": 0.9655
+      },
+      "legit": {
+        "n": 1416,
+        "false_positive_rate": 0.0162
+      },
+      "public_spam": {
+        "n": 520,
+        "recall_on_fraud": 0.9538
+      },
+      "reward_lure": {
+        "n": 19,
+        "recall_on_fraud": 1.0
+      },
+      "urgency_otp": {
+        "n": 15,
+        "recall_on_fraud": 1.0
+      }
+    },
+    "breakdown_by_difficulty": {
+      "adaptive": {
+        "n": 51,
+        "recall_on_fraud": 0.9804
+      },
+      "adversarial": {
+        "n": 11,
+        "recall_on_fraud": 0.9091
+      },
+      "moderate": {
+        "n": 28,
+        "recall_on_fraud": 1.0
+      },
+      "naive": {
+        "n": 1971,
+        "recall_on_fraud": 0.9568
+      }
+    }
+  },
+  "public_holdout": {
+    "n": 3862,
+    "precision": 0.9552,
+    "recall": 0.9638,
+    "f1": 0.9595,
+    "roc_auc": 0.9961,
+    "confusion_matrix": {
+      "tn": 2706,
+      "fp": 50,
+      "fn": 40,
+      "tp": 1066
+    },
+    "false_positive_rate_on_legit": 0.0181,
+    "breakdown_by_subtype": {
+      "legit": {
+        "n": 2756,
+        "false_positive_rate": 0.0181
+      },
+      "public_spam": {
+        "n": 1106,
+        "recall_on_fraud": 0.9638
+      }
+    },
+    "breakdown_by_difficulty": {
+      "naive": {
+        "n": 3862,
+        "recall_on_fraud": 0.9638
+      }
+    }
+  },
+  "top_fraud_indicator_terms": [
+    "subject",
+    "your",
+    "txt",
+    "account",
+    "click",
+    "free",
+    "http",
+    "call",
+    "your account",
+    "reply",
+    "text",
+    "claim",
+    "click here",
+    "org",
+    "viagra"
+  ],
+  "top_legit_indicator_terms": [
+    "enron",
+    "vince",
+    "me",
+    "2000",
+    "my",
+    "kaminski",
+    "research",
+    "00",
+    "ok",
+    "enron com",
+    "am",
+    "energy",
+    "2001",
+    "thanks",
+    "model"
+  ]
+}

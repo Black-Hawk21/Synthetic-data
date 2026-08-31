@@ -1,0 +1,148 @@
+{
+  "generations": [
+    {
+      "generation": 1,
+      "top_terms_faced": [
+        "link",
+        "account",
+        "your account",
+        "verify",
+        "reward",
+        "your",
+        "fraud",
+        "activity",
+        "within",
+        "secure",
+        "we",
+        "funds",
+        "verify your",
+        "detected",
+        "the"
+      ],
+      "batch_size": 40,
+      "evasion_rate_against_previous_detector": 0.4,
+      "recall_before_retrain": {
+        "n": 20,
+        "precision": 1.0,
+        "recall": 0.6,
+        "f1": 0.75
+      },
+      "recall_after_retrain_same_batch": {
+        "n": 20,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "regression_check_on_earlier_generations": {},
+      "holdout_eval_after_retrain": {
+        "n": 12865,
+        "precision": 0.6807,
+        "recall": 0.4524,
+        "f1": 0.5436
+      }
+    },
+    {
+      "generation": 2,
+      "top_terms_faced": [
+        "link",
+        "account",
+        "your account",
+        "verify",
+        "fraud",
+        "reward",
+        "activity",
+        "your",
+        "within",
+        "cashback",
+        "secure",
+        "we",
+        "funds",
+        "verify your",
+        "detected"
+      ],
+      "batch_size": 40,
+      "evasion_rate_against_previous_detector": 0.0,
+      "recall_before_retrain": {
+        "n": 20,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "recall_after_retrain_same_batch": {
+        "n": 20,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "regression_check_on_earlier_generations": {
+        "gen1_batch": {
+          "n": 20,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "holdout_eval_after_retrain": {
+        "n": 12865,
+        "precision": 0.6418,
+        "recall": 0.4943,
+        "f1": 0.5585
+      }
+    },
+    {
+      "generation": 3,
+      "top_terms_faced": [
+        "link",
+        "account",
+        "your account",
+        "verify",
+        "fraud",
+        "reward",
+        "activity",
+        "within",
+        "your",
+        "secure",
+        "cashback",
+        "funds",
+        "we",
+        "verify your",
+        "detected"
+      ],
+      "batch_size": 40,
+      "evasion_rate_against_previous_detector": 0.05,
+      "recall_before_retrain": {
+        "n": 20,
+        "precision": 1.0,
+        "recall": 0.95,
+        "f1": 0.9744
+      },
+      "recall_after_retrain_same_batch": {
+        "n": 20,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "regression_check_on_earlier_generations": {
+        "gen1_batch": {
+          "n": 20,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "gen2_batch": {
+          "n": 20,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "holdout_eval_after_retrain": {
+        "n": 12865,
+        "precision": 0.6078,
+        "recall": 0.5492,
+        "f1": 0.577
+      }
+    }
+  ],
+  "holdout_available": true
+}
