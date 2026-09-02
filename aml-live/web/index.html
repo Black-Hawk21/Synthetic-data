@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AML Surveillance — live feed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;450;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── tokens ─────────────────────────────────────────────────────────────
+   A night operations desk, not a hacker terminal: deep navy rather than
+   black, and a three-step risk semantic that every surface obeys —
+   teal = cleared, amber = watchlist, rose = alert. Violet appears only
+   where ground truth is being shown, so it can never be mistaken for a
+   model verdict.                                                        */
+:root{
+  --ink:#070C18; --panel:#0C1322; --raise:#111A2C; --sunk:#060A14;
+  --line:#1B2740; --line2:#263554;
+  --dim:#55658A; --mid:#8598C0; --paper:#E4EAF8;
+  --flow:#35D6AE; --watch:#F2AE3C; --alert:#FF4767; --truth:#A87BFF;
+  --mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  --cond:'IBM Plex Sans Condensed','IBM Plex Sans',system-ui,sans-serif;
+  --sans:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+  --rail:344px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--sans);
+  font-size:14px; line-height:1.45; overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+:focus-visible{outline:2px solid var(--flow); outline-offset:2px; border-radius:2px}
+
+/* small-caps utility label — used for every panel heading and column head */
+.lab{
+  font-family:var(--cond); font-size:10.5px; font-weight:600;
+  letter-spacing:.13em; text-transform:uppercase; color:var(--dim);
+}
+
+/* ── shell ──────────────────────────────────────────────────────────── */
+#app{display:grid; grid-template-rows:auto auto 1fr; height:100%}
+
+/* ── topbar ─────────────────────────────────────────────────────────── */
+#top{
+  display:flex; align-items:center; flex-wrap:wrap; gap:10px 16px;
+  padding:7px 16px; min-height:52px;
+  background:var(--panel); border-bottom:1px solid var(--line);
+}
+.ctl{flex-wrap:wrap}
+.brand{display:flex; align-items:center; gap:10px; flex:0 0 auto}
+.pip{
+  width:9px; height:9px; border-radius:50%; background:var(--dim);
+  box-shadow:0 0 0 3px rgba(85,101,138,.15);
+}
+body.live .pip{background:var(--flow); box-shadow:0 0 0 3px rgba(53,214,174,.16); animation:beat 1.9s ease-in-out infinite}
+body.hot .pip{background:var(--alert); box-shadow:0 0 0 3px rgba(255,71,103,.2)}
+@keyframes beat{0%,100%{opacity:1}50%{opacity:.35}}
+.brand h1{
+  font-family:var(--cond); font-size:14px; font-weight:700;
+  letter-spacing:.1em; text-transform:uppercase; white-space:nowrap;
+}
+.brand span{font-family:var(--cond); font-size:11px; color:var(--dim); letter-spacing:.07em}
+
+#clock{
+  font-family:var(--mono); font-size:13px; font-variant-numeric:tabular-nums;
+  color:var(--paper); padding:5px 11px; background:var(--sunk);
+  border:1px solid var(--line); border-radius:3px; white-space:nowrap;
+}
+#clock b{color:var(--dim); font-weight:400}
+
+.seg{display:flex; background:var(--sunk); border:1px solid var(--line); border-radius:3px; padding:2px}
+.seg button{
+  font-family:var(--cond); font-size:11px; font-weight:600; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--dim); background:none; border:0;
+  padding:5px 11px; border-radius:2px; cursor:pointer;
+}
+.seg button:hover{color:var(--mid)}
+.seg button[aria-pressed="true"]{background:var(--raise); color:var(--paper)}
+
+.spacer{flex:1}
+.ctl{display:flex; align-items:center; gap:8px}
+button.act{
+  font-family:var(--cond); font-size:11.5px; font-weight:600; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--mid); background:var(--raise);
+  border:1px solid var(--line2); padding:7px 13px; border-radius:3px; cursor:pointer;
+}
+button.act:hover{border-color:var(--dim); color:var(--paper)}
+button.act.primary{background:var(--flow); border-color:var(--flow); color:#04211A}
+button.act.primary:hover{filter:brightness(1.08)}
+select{
+  font-family:var(--mono); font-size:12px; color:var(--paper);
+  background:var(--sunk); border:1px solid var(--line); border-radius:3px;
+  padding:6px 8px; cursor:pointer;
+}
+
+/* ── stats rail ─────────────────────────────────────────────────────── */
+#stats{
+  display:flex; align-items:stretch; gap:0; background:var(--panel);
+  border-bottom:1px solid var(--line); overflow-x:auto; scrollbar-width:none;
+}
+#stats::-webkit-scrollbar{display:none}
+.stat{flex:0 0 auto; padding:9px 18px; border-right:1px solid var(--line); white-space:nowrap}
+.stat .v{
+  font-family:var(--mono); font-size:15px; font-weight:500;
+  font-variant-numeric:tabular-nums; letter-spacing:-.01em;
+}
+.stat .v small{font-size:11px; color:var(--dim); font-weight:400; margin-left:2px}
+.stat.alert .v{color:var(--alert)}
+.stat.watch .v{color:var(--watch)}
+.stat.flow .v{color:var(--flow)}
+#progwrap{flex:1 1 120px; min-width:120px; display:flex; flex-direction:column; justify-content:center; padding:9px 18px; gap:6px}
+#progbar{height:3px; background:var(--sunk); border-radius:2px; overflow:hidden; position:relative}
+#progfill{height:100%; width:0; background:var(--flow); transition:width .2s linear}
+
+/* ── stage + rail ───────────────────────────────────────────────────── */
+#main{display:grid; grid-template-columns:1fr var(--rail); min-height:0}
+#stage{position:relative; min-width:0; min-height:0; background:var(--sunk); display:flex; flex-direction:column}
+#rail{
+  border-left:1px solid var(--line); background:var(--panel);
+  display:grid; grid-template-rows:1fr auto; min-height:0;
+}
+
+/* ── ledger ─────────────────────────────────────────────────────────── */
+#ledger{display:flex; flex-direction:column; min-height:0; height:100%}
+#lhead,.row{
+  display:grid; align-items:center;
+  grid-template-columns:minmax(0,122px) minmax(0,84px) minmax(0,96px) 14px
+    minmax(0,96px) minmax(56px,1fr) minmax(0,44px) minmax(0,84px)
+    minmax(0,70px) minmax(0,62px);
+  gap:10px; padding:0 16px;
+}
+#lhead>*,.row>*{white-space:nowrap; overflow:hidden; text-overflow:clip}
+#lhead{height:30px; border-bottom:1px solid var(--line); background:var(--panel); flex:0 0 auto}
+#lhead .r{text-align:right}
+#log{flex:1; overflow-y:auto; overflow-x:hidden; font-family:var(--mono); font-size:12.5px}
+#log::-webkit-scrollbar{width:9px}
+#log::-webkit-scrollbar-track{background:var(--sunk)}
+#log::-webkit-scrollbar-thumb{background:var(--line2); border-radius:5px}
+
+.row{
+  height:26px; border-bottom:1px solid rgba(27,39,64,.5);
+  font-variant-numeric:tabular-nums; color:var(--mid);
+  animation:in .22s ease-out;
+}
+@keyframes in{from{opacity:0; transform:translateY(-3px)}to{opacity:1; transform:none}}
+.row .t{color:var(--dim)}
+.row .id{color:var(--dim)}
+.row .acct{color:var(--mid); cursor:pointer}
+.row .acct:hover{color:var(--paper); text-decoration:underline}
+.row .ar{color:var(--line2); text-align:center}
+.row .amt{text-align:right; color:var(--paper)}
+.row .ch{color:var(--dim); font-size:11px}
+.row .sc{text-align:right; color:var(--dim); font-size:11.5px}
+.row .vd{
+  font-family:var(--cond); font-size:10px; font-weight:600; letter-spacing:.11em;
+  text-transform:uppercase; text-align:right; color:var(--dim);
+}
+/* watchlist band */
+.row.t1{color:var(--paper); background:rgba(242,174,60,.045)}
+.row.t1 .vd{color:var(--watch)}
+.row.t1 .amt{color:var(--watch)}
+/* alert */
+.row.t2{
+  color:var(--paper); background:rgba(255,71,103,.075);
+  box-shadow:inset 2px 0 0 var(--alert);
+}
+.row.t2 .vd{color:var(--alert)}
+.row.t2 .amt{color:var(--alert)}
+.row.t2 .sc{color:var(--alert)}
+.row.t2 .acct{color:var(--paper)}
+/* ground-truth marker: a hairline in violet on the right edge */
+body.truth .row.gt{box-shadow:inset 2px 0 0 var(--alert), inset -2px 0 0 var(--truth)}
+body.truth .row.gt:not(.t2){box-shadow:inset -2px 0 0 var(--truth)}
+body.truth .row.miss .vd::after{content:' ✕'; color:var(--truth)}
+
+/* the risk meter — the tick at dead centre is the alert threshold, so a
+   bar past halfway is a queued alert. holds regardless of how the run
+   was calibrated. */
+.meter{position:relative; height:6px; background:#0A1120; border:1px solid var(--line); border-radius:1px}
+.meter i{display:block; height:100%; background:#3C4E76; border-radius:1px}
+.meter::after{
+  content:''; position:absolute; left:50%; top:-2px; bottom:-2px; width:1px;
+  background:var(--dim); opacity:.85;
+}
+.row.t1 .meter i{background:var(--watch)}
+.row.t2 .meter i{background:var(--alert)}
+.row.agg{
+  grid-template-columns:1fr; height:20px; color:var(--dim); font-size:11px;
+  border-bottom:0; animation:none; opacity:.65;
+}
+
+#jump{
+  position:absolute; left:50%; bottom:18px; transform:translateX(-50%);
+  display:none; z-index:5;
+}
+#jump.on{display:block}
+
+/* ── network ────────────────────────────────────────────────────────── */
+#net{position:relative; flex:1; min-height:0; display:none}
+body.net #net{display:block}
+body.net #ledger{display:none}
+#cv{display:block; width:100%; height:100%}
+#legend{
+  position:absolute; left:14px; bottom:14px; display:flex; flex-direction:column; gap:6px;
+  background:rgba(12,19,34,.82); border:1px solid var(--line); border-radius:4px;
+  padding:10px 12px; backdrop-filter:blur(6px); pointer-events:none;
+}
+#legend div{display:flex; align-items:center; gap:8px; font-size:11px; color:var(--mid)}
+#legend b{width:8px; height:8px; border-radius:50%; display:block}
+#tip{
+  position:absolute; pointer-events:none; z-index:6; display:none;
+  background:var(--raise); border:1px solid var(--line2); border-radius:4px;
+  padding:9px 11px; min-width:190px; font-family:var(--mono); font-size:11.5px;
+  box-shadow:0 10px 30px rgba(0,0,0,.55);
+}
+#tip .h{font-size:12.5px; color:var(--paper); margin-bottom:5px}
+#tip .k{display:flex; justify-content:space-between; gap:14px; color:var(--dim)}
+#tip .k span:last-child{color:var(--mid)}
+
+/* ── rail panels ────────────────────────────────────────────────────── */
+.pan{display:flex; flex-direction:column; min-height:0; border-bottom:1px solid var(--line)}
+.pan:last-child{border-bottom:0}
+.pan>header{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:10px 14px; border-bottom:1px solid var(--line); flex:0 0 auto;
+}
+.pan>header .n{font-family:var(--mono); font-size:11px; color:var(--dim)}
+#alerts{overflow-y:auto; min-height:0}
+#alerts::-webkit-scrollbar{width:9px}
+#alerts::-webkit-scrollbar-track{background:var(--panel)}
+#alerts::-webkit-scrollbar-thumb{background:var(--line2); border-radius:5px}
+.al{
+  padding:9px 14px; border-bottom:1px solid rgba(27,39,64,.6); cursor:pointer;
+  border-left:2px solid var(--alert);
+}
+.al.fresh{animation:flash .55s ease-out}
+@keyframes flash{from{background:rgba(255,71,103,.18)}to{background:transparent}}
+.al:hover{background:var(--raise)}
+.al .r1{display:flex; justify-content:space-between; align-items:baseline; gap:8px}
+.al .amt{font-family:var(--mono); font-size:13px; color:var(--alert); font-variant-numeric:tabular-nums}
+.al .tm{font-family:var(--mono); font-size:10.5px; color:var(--dim)}
+.al .r2{font-family:var(--mono); font-size:11px; color:var(--mid); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.al .r3{display:flex; gap:6px; align-items:center; margin-top:5px}
+.tag{
+  font-family:var(--cond); font-size:9.5px; font-weight:600; letter-spacing:.09em;
+  text-transform:uppercase; padding:2px 6px; border-radius:2px;
+  border:1px solid var(--line2); color:var(--dim);
+}
+.tag.gt{border-color:rgba(168,123,255,.5); color:var(--truth)}
+.tag.fp{border-color:rgba(85,101,138,.55); color:var(--dim)}
+.tag.lk{border-color:rgba(242,174,60,.5); color:var(--watch)}
+
+#typo{max-height:44vh; overflow-y:auto; padding:4px 0 10px}
+#typo::-webkit-scrollbar{width:9px}
+#typo::-webkit-scrollbar-thumb{background:var(--line2); border-radius:5px}
+.tp{padding:7px 14px}
+.tp .r1{display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:4px}
+.tp .nm{font-family:var(--mono); font-size:11.5px; color:var(--mid)}
+.tp .ct{font-family:var(--mono); font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums}
+.tp .bar{height:4px; background:var(--sunk); border-radius:2px; overflow:hidden}
+.tp .bar i{display:block; height:100%; background:var(--flow); border-radius:2px; transition:width .3s ease}
+.tp.low .bar i{background:var(--watch)}
+.tp.none .bar i{background:var(--alert)}
+.tp .ct b{color:var(--paper); font-weight:500}
+
+/* ── overlay states ─────────────────────────────────────────────────── */
+#veil{
+  position:absolute; inset:0; z-index:20; display:flex; align-items:center;
+  justify-content:center; background:rgba(7,12,24,.94); backdrop-filter:blur(3px);
+}
+#veil.gone{display:none}
+.card{max-width:600px; padding:34px 38px; text-align:left}
+.card h2{
+  font-family:var(--cond); font-size:26px; font-weight:700; letter-spacing:-.005em;
+  margin-bottom:8px; line-height:1.15;
+}
+.card p{color:var(--mid); font-size:13.5px; margin-bottom:20px; max-width:46ch}
+.card p code{font-family:var(--mono); font-size:12.5px; color:var(--paper); background:var(--raise); padding:2px 6px; border-radius:3px}
+.facts{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(92px,1fr)); gap:1px;
+  background:var(--line); border:1px solid var(--line); border-radius:4px;
+  margin-bottom:22px; overflow:hidden;
+}
+.facts div{background:var(--panel); padding:11px 13px}
+.facts .v{font-family:var(--mono); font-size:16px; font-variant-numeric:tabular-nums}
+.facts .v small{font-size:11px; color:var(--dim)}
+.err{color:var(--alert)}
+#drop{
+  border:1px dashed var(--line2); border-radius:4px; padding:16px;
+  text-align:center; color:var(--dim); font-size:12.5px; margin-top:16px;
+}
+#drop.over{border-color:var(--flow); color:var(--flow)}
+.keys{margin-top:20px; display:flex; flex-wrap:wrap; gap:14px}
+.keys span{font-size:11.5px; color:var(--dim)}
+.keys kbd{
+  font-family:var(--mono); font-size:10.5px; background:var(--raise);
+  border:1px solid var(--line2); border-bottom-width:2px; border-radius:3px;
+  padding:1px 5px; color:var(--mid); margin-right:5px;
+}
+
+/* ── responsive ─────────────────────────────────────────────────────── */
+@media (max-width:1180px){
+  :root{--rail:300px}
+  #lhead,.row{grid-template-columns:minmax(0,112px) minmax(0,92px) 14px minmax(0,92px)
+    minmax(56px,1fr) minmax(0,42px) minmax(0,80px) minmax(0,66px) minmax(0,58px); gap:8px}
+  .row .id,#lhead .id{display:none}
+}
+@media (max-width:1000px){
+  #lhead,.row{grid-template-columns:minmax(0,106px) minmax(0,88px) 14px minmax(0,88px)
+    minmax(56px,1fr) minmax(0,74px) minmax(0,56px); gap:8px}
+  .row .ch,.row .sc,#lhead .ch,#lhead .sc{display:none}
+}
+@media (max-width:860px){
+  html,body{height:auto; overflow:auto}
+  #app{height:auto; min-height:100%}
+  #top{padding:9px 12px; gap:8px}
+  .spacer{display:none}
+  .ctl{gap:6px}
+  .brand h1{font-size:12.5px}
+  .stat{padding:8px 12px}
+  .stat .v{font-size:13.5px}
+  #progwrap{display:none}
+  #main{grid-template-columns:1fr; grid-template-rows:auto auto}
+  #stage{height:66vh; min-height:340px}
+  #net{min-height:340px}
+  #rail{border-left:0; border-top:1px solid var(--line); display:block}
+  #alerts{max-height:46vh}
+  #typo{max-height:none}
+  /* time, both parties, amount and the verdict colour — the rest is desktop */
+  #lhead,.row{grid-template-columns:minmax(0,62px) 1fr 1fr minmax(0,74px) minmax(0,52px);
+    gap:6px; padding:0 12px}
+  .row .t .d{display:none}
+  #log{font-size:11px}
+  .row .ar,.row .meter,#lhead .meter,
+  #lhead>div:nth-child(4),#lhead>div:nth-child(8){display:none}
+  .lab{font-size:9.5px; letter-spacing:.08em}
+  .card{padding:24px 20px}
+  .card h2{font-size:20px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important; transition:none!important}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header id="top">
+    <div class="brand">
+      <i class="pip" id="pip"></i>
+      <h1>AML Surveillance</h1>
+      <span id="src">—</span>
+    </div>
+
+    <div id="clock"><b>—</b></div>
+
+    <div class="seg" role="group" aria-label="View">
+      <button id="vLedger" aria-pressed="true">Ledger</button>
+      <button id="vNet" aria-pressed="false">Network</button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="ctl">
+      <select id="filter" aria-label="Show which transactions" title="Which rows reach the ledger">
+        <option value="all">All traffic</option>
+        <option value="watch">Watchlist and above</option>
+        <option value="alerts">Alerts only</option>
+      </select>
+      <select id="speed" aria-label="Playback speed" title="Simulated time per real second">
+        <option value="300">5 min / sec</option>
+        <option value="900">15 min / sec</option>
+        <option value="3600" selected>1 hour / sec</option>
+        <option value="21600">6 hours / sec</option>
+        <option value="86400">24 hours / sec</option>
+      </select>
+      <button class="act" id="truthBtn" aria-pressed="false" title="Reveal the generator's labels (G)">Ground truth</button>
+      <button class="act" id="nextBtn" title="Skip to the next alert (N)">Next alert</button>
+      <button class="act" id="resetBtn" title="Restart the feed (R)">Restart</button>
+      <button class="act primary" id="playBtn" title="Play / pause (Space)">Play</button>
+    </div>
+  </header>
+
+  <div id="stats">
+    <div class="stat"><div class="lab">Processed</div><div class="v" id="sProc">0</div></div>
+    <div class="stat flow"><div class="lab">Throughput</div><div class="v" id="sRate">0<small>/s</small></div></div>
+    <div class="stat"><div class="lab">Value moved</div><div class="v" id="sVal">₹0</div></div>
+    <div class="stat watch"><div class="lab">Watchlist</div><div class="v" id="sWatch">0</div></div>
+    <div class="stat alert"><div class="lab">Alerts</div><div class="v" id="sAlerts">0</div></div>
+    <div class="stat"><div class="lab">Precision</div><div class="v" id="sPrec">—</div></div>
+    <div class="stat"><div class="lab">Recall</div><div class="v" id="sRec">—</div></div>
+    <div id="progwrap">
+      <div class="lab" id="progLab">Idle</div>
+      <div id="progbar"><div id="progfill"></div></div>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="stage">
+
+      <section id="ledger" aria-label="Transaction ledger">
+        <div id="lhead">
+          <div class="lab">Time</div>
+          <div class="lab id">Txn</div>
+          <div class="lab">From</div>
+          <div></div>
+          <div class="lab">To</div>
+          <div class="lab r">Amount ₹</div>
+          <div class="lab ch">Rail</div>
+          <div class="lab">Risk</div>
+          <div class="lab r sc">Score</div>
+          <div class="lab r">Verdict</div>
+        </div>
+        <div id="log" tabindex="0" aria-live="off"></div>
+        <button class="act" id="jump">Jump to live ↓</button>
+      </section>
+
+      <section id="net" aria-label="Transaction network">
+        <canvas id="cv"></canvas>
+        <div id="legend">
+          <div><b style="background:var(--flow)"></b> Cleared</div>
+          <div><b style="background:var(--watch)"></b> Watchlist</div>
+          <div><b style="background:var(--alert)"></b> Alert · cluster halo</div>
+          <div id="lgTruth" style="display:none"><b style="background:var(--truth)"></b> True laundering</div>
+        </div>
+        <div id="tip"></div>
+      </section>
+
+      <div id="veil">
+        <div class="card" id="card">
+          <h2>Loading the run…</h2>
+          <p>Reading scored transactions.</p>
+        </div>
+      </div>
+    </div>
+
+    <aside id="rail">
+      <section class="pan">
+        <header>
+          <div class="lab">Alert queue</div>
+          <div class="n" id="alN">0 open</div>
+        </header>
+        <div id="alerts"></div>
+      </section>
+      <section class="pan">
+        <header>
+          <div class="lab">Detection by typology</div>
+          <div class="n" id="tpN">live recall</div>
+        </header>
+        <div id="typo"></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════
+   AML live view — replays a pre-scored ledger.
+
+   The GNN aggregates over a 3-hop neighbourhood, so every account's
+   embedding depends on edges that arrive later in wall-clock order.
+   Scoring the finished graph once (build_stream.py) and revealing each
+   score at its own transaction's timestamp is therefore both faster and
+   more truthful than pretending the model re-runs per row. Nothing here
+   ever reads a score before its transaction has arrived.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* field offsets, mirroring meta.fields */
+const T=0, TID=1, SRC=2, DST=3, AMT=4, CH=5, SCORE=6, RISK=7, PAT=8, TRUTH=9, XB=10;
+
+const $ = s => document.querySelector(s);
+const clamp = (v,a,b) => v<a?a:v>b?b:v;
+const DOM = {};  // filled on boot — querying per frame is a needless style read
+const CFONT = "11px 'IBM Plex Sans',system-ui,sans-serif";
+const CFONT_B = "600 10px 'IBM Plex Sans Condensed','IBM Plex Sans',system-ui,sans-serif";
+
+const S = {
+  meta:null, acct:null, ev:null,
+  ptr:0, simT:0, playing:false, speed:3600, t0:0,
+  view:'ledger', filter:'all', truth:false,
+  n:0, value:0, nWatch:0, nAlert:0, tp:0, fp:0, fnMissed:0, nTrue:0,
+  pat:new Map(), alerts:[], newAlerts:[], rateBuf:[], lastRate:0,
+  dirtyAlerts:true, dirtyPat:true, stuck:true, pending:0, patEls:new Map(),
+};
+
+const inr0 = new Intl.NumberFormat('en-IN',{maximumFractionDigits:0});
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ₹ in the units the dataset is actually denominated in */
+function money(v){
+  if(v>=1e7) return '₹'+(v/1e7).toFixed(v>=1e8?0:1)+'Cr';
+  if(v>=1e5) return '₹'+(v/1e5).toFixed(v>=1e6?0:1)+'L';
+  return '₹'+inr0.format(Math.round(v));
+}
+function scoreTxt(s){ return s>=0.001 ? s.toFixed(4) : s.toExponential(1); }
+function stamp(sec){
+  const d = new Date(S.t0 + sec*1000);
+  const p = n => String(n).padStart(2,'0');
+  return `${p(d.getUTCDate())} ${MON[d.getUTCMonth()]} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
+}
+function tierOf(e){
+  const s = e[SCORE];
+  return s >= S.meta.alert_threshold ? 2 : s >= S.meta.watch_threshold ? 1 : 0;
+}
+const acctId = i => S.acct.id[i];
+
+/* ═══ load ══════════════════════════════════════════════════════════ */
+async function load(){
+  try{
+    const r = await fetch('stream.json', {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    boot(await r.json());
+  }catch(err){
+    $('#card').innerHTML = `
+      <h2 class="err">No replay file</h2>
+      <p>The page could not read <code>stream.json</code>. Two things produce it:
+         run <code>python aml-live/build_stream.py</code> to score a dataset,
+         then <code>python aml-live/serve.py</code> to serve this page over
+         HTTP. Opening the file directly from disk will not work — the browser
+         blocks the fetch.</p>
+      <div id="drop">Or drop a <b>stream.json</b> here</div>`;
+    wireDrop();
+  }
+}
+function wireDrop(){
+  const d = $('#drop'); if(!d) return;
+  const stop = e => {e.preventDefault(); e.stopPropagation();};
+  ['dragenter','dragover'].forEach(k => d.addEventListener(k, e=>{stop(e); d.classList.add('over');}));
+  ['dragleave','drop'].forEach(k => d.addEventListener(k, e=>{stop(e); d.classList.remove('over');}));
+  d.addEventListener('drop', async e => {
+    const f = e.dataTransfer.files[0]; if(!f) return;
+    try{ boot(JSON.parse(await f.text())); }
+    catch(x){ d.textContent = 'That file did not parse as JSON.'; }
+  });
+}
+
+function boot(data){
+  S.meta = data.meta; S.acct = data.accounts; S.ev = data.events;
+  if(!S.meta.families) S.meta.families = S.meta.patterns.map(()=> 'normal');
+  for(const k of ['log','alerts','typo','progfill','progLab','clock','sProc',
+                  'sRate','sVal','sWatch','sAlerts','sPrec','sRec','alN','jump'])
+    DOM[k] = document.getElementById(k);
+  S.t0 = Date.parse(S.meta.start.endsWith('Z') ? S.meta.start : S.meta.start+'Z');
+  if(Number.isNaN(S.t0)) S.t0 = Date.parse(S.meta.start);
+
+  $('#src').textContent = `${S.meta.source} · GNN`;
+  const m = S.meta.txn_metrics || {};
+  const days = (S.meta.span_seconds/86400).toFixed(0);
+  $('#card').innerHTML = `
+    <h2>${inr0.format(S.meta.n_events)} transactions, already scored.</h2>
+    <p>${inr0.format(S.meta.n_accounts)} accounts over ${days} days from
+       <code>${S.meta.source}</code>, each transaction carrying a laundering score
+       from the graph network. Press play and the ledger replays in order —
+       anything at or above the alert threshold goes to the queue on the right.</p>
+    <div class="facts">
+      <div><div class="lab">Alert line</div><div class="v">${S.meta.alert_threshold.toFixed(4)}</div></div>
+      ${m.roc_auc?`<div><div class="lab">ROC-AUC</div><div class="v">${m.roc_auc}</div></div>`:''}
+      ${m.pr_auc?`<div><div class="lab">PR-AUC</div><div class="v">${m.pr_auc}</div></div>`:''}
+      ${m.recall?`<div><div class="lab">Recall</div><div class="v">${(m.recall*100).toFixed(0)}<small>%</small></div></div>`:''}
+      ${m.precision?`<div><div class="lab">Precision</div><div class="v">${(m.precision*100).toFixed(0)}<small>%</small></div></div>`:''}
+    </div>
+    <button class="act primary" id="startBtn" style="font-size:13px;padding:10px 20px">Start the feed</button>
+    <div class="keys">
+      <span><kbd>Space</kbd>play</span><span><kbd>1</kbd><kbd>2</kbd>view</span>
+      <span><kbd>N</kbd>next alert</span><span><kbd>G</kbd>ground truth</span>
+      <span><kbd>R</kbd>restart</span>
+    </div>`;
+  $('#startBtn').onclick = () => { $('#veil').classList.add('gone'); setPlay(true); };
+
+  for(let i=0;i<S.meta.patterns.length;i++){
+    if(S.meta.families[i]==='laundering')
+      S.pat.set(i,{name:S.meta.patterns[i], seen:0, caught:0});
+  }
+  renderPat();
+  Net.init();
+  requestAnimationFrame(frame);
+}
+
+/* ═══ transport ═════════════════════════════════════════════════════ */
+function setPlay(on){
+  S.playing = on;
+  $('#playBtn').textContent = on ? 'Pause' : 'Play';
+  document.body.classList.toggle('live', on);
+  DOM.progLab.textContent = on ? 'Streaming' : (S.ptr ? 'Paused' : 'Idle');
+  if(on) $('#veil').classList.add('gone');
+}
+function reset(){
+  setPlay(false);
+  S.ptr=0; S.simT=0; S.n=0; S.value=0; S.nWatch=0; S.nAlert=0;
+  S.tp=0; S.fp=0; S.fnMissed=0; S.nTrue=0; S.alerts=[]; S.newAlerts=[]; S.pending=0;
+  S.rateBuf=[]; S.lastRate=0; S.stuck=true;
+  for(const p of S.pat.values()){ p.seen=0; p.caught=0; }
+  S.patEls.clear();
+  DOM.log.replaceChildren(); DOM.alerts.replaceChildren(); DOM.typo.replaceChildren();
+  DOM.progfill.style.width='0%';
+  Net.reset(); renderPat(); renderAlerts(true); tickStats();
+  DOM.progLab.textContent='Idle';
+}
+/* fast-forward to the next queued alert */
+function nextAlert(){
+  for(let i=S.ptr;i<S.ev.length;i++){
+    if(tierOf(S.ev[i])===2){
+      S.simT = S.ev[i][T];
+      drain(400000);
+      DOM.log.scrollTop = DOM.log.scrollHeight;
+      return;
+    }
+  }
+}
+
+/* ═══ main loop ═════════════════════════════════════════════════════ */
+let prev = performance.now(), acc = 0, statAcc = 0;
+function frame(now){
+  const dt = Math.min((now-prev)/1000, 0.1); prev = now;
+
+  if(S.playing){
+    S.simT += dt * S.speed;
+    drain(20000);
+    if(S.ptr >= S.ev.length){ setPlay(false); DOM.progLab.textContent='Run complete'; }
+  }
+  Net.step(dt);
+  if(S.view==='net') Net.draw();
+
+  statAcc += dt;
+  if(statAcc > 0.1){
+    S.rateBuf.push([now, S.n]);
+    while(S.rateBuf.length>2 && now - S.rateBuf[0][0] > 1500) S.rateBuf.shift();
+    tickStats(); statAcc = 0;
+    if(S.dirtyAlerts) renderAlerts();
+    if(S.dirtyPat) renderPat();
+  }
+  requestAnimationFrame(frame);
+}
+
+/* pull every event whose timestamp has passed */
+function drain(budget){
+  const ev=S.ev, log=DOM.log, frag=document.createDocumentFragment();
+  let work=0, rows=0, cleanRows=0;
+  const CLEAN_CAP = 26, ROW_CAP = 80;
+
+  while(S.ptr<ev.length && ev[S.ptr][T] <= S.simT && work<budget){
+    const e = ev[S.ptr++]; work++;
+    const t = tierOf(e);
+    apply(e, t);
+
+    const pass = S.filter==='all' || (S.filter==='watch' && t>=1) || (S.filter==='alerts' && t===2);
+    if(pass && rows<ROW_CAP && (t>0 || cleanRows<CLEAN_CAP)){
+      if(S.pending){ frag.appendChild(aggRow(S.pending)); S.pending=0; }
+      frag.appendChild(makeRow(e,t)); rows++; if(t===0) cleanRows++;
+    }else if(pass){ S.pending++; }
+  }
+  if(!work) return;
+
+  if(frag.childNodes.length){
+    log.appendChild(frag);
+    let over = log.childElementCount - 320;
+    while(over-- > 0) log.removeChild(log.firstChild);
+    if(S.stuck) log.scrollTop = log.scrollHeight;
+  }
+  DOM.progfill.style.width = (S.ptr/S.ev.length*100).toFixed(2)+'%';
+}
+
+/* fold one transaction into every running total */
+function apply(e, t){
+  S.n++; S.value += e[AMT];
+  const truth = e[TRUTH]===1;
+  if(truth){
+    S.nTrue++;
+    const p = S.pat.get(e[PAT]); if(p) p.seen++;
+  }
+  if(t===1) S.nWatch++;
+  if(t===2){
+    S.nAlert++;
+    if(truth){ S.tp++; const p=S.pat.get(e[PAT]); if(p) p.caught++; }
+    else S.fp++;
+    S.alerts.unshift(e);
+    if(S.alerts.length>60) S.alerts.length=60;
+    S.newAlerts.push(e);
+    if(S.newAlerts.length>40) S.newAlerts.shift();
+    S.dirtyAlerts=true;
+    document.body.classList.add('hot');
+    clearTimeout(apply._h);
+    apply._h = setTimeout(()=>document.body.classList.remove('hot'), 900);
+  }else if(truth){ S.fnMissed++; }
+  if(truth) S.dirtyPat=true;
+  Net.feed(e,t);
+}
+
+/* ═══ ledger rows ═══════════════════════════════════════════════════ */
+function makeRow(e,t){
+  const d = document.createElement('div');
+  d.className = 'row t'+t + (e[TRUTH]?' gt':'') + (e[TRUTH]&&t<2?' miss':'');
+  const risk = clamp(e[RISK]/10, 1, 100);
+  d.innerHTML =
+    `<span class="t"><span class="d">${stamp(e[T]).slice(0,7)}</span>${stamp(e[T]).slice(7)}</span>`+
+    `<span class="id">T${String(e[TID]).padStart(8,'0')}</span>`+
+    `<span class="acct" data-a="${e[SRC]}">${acctId(e[SRC])}</span>`+
+    `<span class="ar">→</span>`+
+    `<span class="acct" data-a="${e[DST]}">${acctId(e[DST])}</span>`+
+    `<span class="amt">${inr0.format(Math.round(e[AMT]))}</span>`+
+    `<span class="ch">${S.meta.channels[e[CH]]}</span>`+
+    `<span class="meter"><i style="width:${risk.toFixed(1)}%"></i></span>`+
+    `<span class="sc">${scoreTxt(e[SCORE])}</span>`+
+    `<span class="vd">${t===2?'Alert':t===1?'Watch':'Clear'}</span>`;
+  return d;
+}
+function aggRow(n){
+  const d = document.createElement('div');
+  d.className = 'row agg';
+  d.textContent = `· ${inr0.format(n)} cleared below the watch line`;
+  return d;
+}
+
+/* ═══ stats ═════════════════════════════════════════════════════════ */
+function tickStats(){
+  DOM.sProc.textContent = inr0.format(S.n);
+  DOM.sVal.textContent = money(S.value);
+  DOM.sWatch.textContent = inr0.format(S.nWatch);
+  DOM.sAlerts.textContent = inr0.format(S.nAlert);
+
+  if(S.rateBuf.length>1){
+    const a=S.rateBuf[0], b=S.rateBuf[S.rateBuf.length-1];
+    const dt=(b[0]-a[0])/1000;
+    if(dt>0.3) S.lastRate = (b[1]-a[1])/dt;
+  }
+  if(!S.playing) S.lastRate *= 0.6;
+  DOM.sRate.innerHTML = (S.lastRate<10?S.lastRate.toFixed(1):inr0.format(Math.round(S.lastRate)))+'<small>/s</small>';
+
+  if(S.meta.has_labels){
+    DOM.sPrec.textContent = S.nAlert ? (S.tp/S.nAlert*100).toFixed(0)+'%' : '—';
+    DOM.sRec.textContent  = S.nTrue  ? (S.tp/S.nTrue*100).toFixed(0)+'%'  : '—';
+  }
+  DOM.clock.innerHTML = S.n
+    ? stamp(Math.min(S.simT, S.meta.span_seconds)).replace(/^(\d+ \w+)/,'<b>$1</b>')
+    : '<b>—</b>';
+}
+
+/* ═══ alert queue ═══════════════════════════════════════════════════ */
+function alertEl(e, fresh){
+  const fam = S.meta.families[e[PAT]];
+  const el = document.createElement('div');
+  el.className = 'al' + (fresh?' fresh':'');
+  el.dataset.a = e[SRC];
+  el.innerHTML =
+    `<div class="r1"><span class="amt">${money(e[AMT])}</span><span class="tm">${stamp(e[T])}</span></div>`+
+    `<div class="r2">${acctId(e[SRC])} → ${acctId(e[DST])}</div>`+
+    `<div class="r3">`+
+      `<span class="tag">${S.meta.channels[e[CH]]}</span>`+
+      `<span class="tag">${scoreTxt(e[SCORE])}</span>`+
+      (S.truth
+        ? (e[TRUTH] ? `<span class="tag gt">${S.meta.patterns[e[PAT]]}</span>`
+                    : `<span class="tag ${fam==='lookalike'?'lk':'fp'}">${fam==='lookalike'?S.meta.patterns[e[PAT]]:'false positive'}</span>`)
+        : '')+
+    `</div>`;
+  return el;
+}
+/* Prepend only what is new. Rebuilding the whole list every tick made every
+   card replay its entry animation, which read as a strobe. */
+function renderAlerts(full){
+  S.dirtyAlerts = false;
+  const box = DOM.alerts;
+  DOM.alN.textContent = inr0.format(S.nAlert)+' raised';
+  if(full){
+    box.replaceChildren(...S.alerts.slice(0,40).map(e => alertEl(e,false)));
+    S.newAlerts.length = 0;
+    return;
+  }
+  for(const e of S.newAlerts) box.prepend(alertEl(e,true));
+  S.newAlerts.length = 0;
+  while(box.childElementCount > 40) box.removeChild(box.lastChild);
+}
+
+/* ═══ typology recall ═══════════════════════════════════════════════ */
+/* Update the bars in place so the width transition actually plays. */
+function renderPat(){
+  S.dirtyPat = false;
+  const box = DOM.typo;
+  const live = [...S.pat.entries()].filter(([,p]) => p.seen > 0);
+  if(!live.length){
+    if(!S.patEls.size && !box.firstChild){
+      const el = document.createElement('div');
+      el.className = 'tp';
+      el.innerHTML = `<div class="nm" style="color:var(--dim);font-size:11.5px">`+
+        `No laundering episodes have reached the feed yet.</div>`;
+      box.replaceChildren(el);
+    }
+    return;
+  }
+  if(S.patEls.size === 0) box.replaceChildren();
+  for(const [k,p] of live){
+    let el = S.patEls.get(k);
+    if(!el){
+      el = document.createElement('div');
+      el.innerHTML =
+        `<div class="r1"><span class="nm">${p.name}</span><span class="ct"></span></div>`+
+        `<div class="bar"><i></i></div>`;
+      S.patEls.set(k, el);
+      box.appendChild(el);
+    }
+    const r = p.caught/p.seen;
+    el.className = 'tp'+(r<0.5?' none':r<0.8?' low':'');
+    el.querySelector('.ct').innerHTML = `<b>${p.caught}</b>/${p.seen} · ${(r*100).toFixed(0)}%`;
+    el.querySelector('.bar i').style.width = (r*100).toFixed(1)+'%';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Network view.
+
+   A sliding window of recent activity, laid out by a small force
+   simulation. Money travels as particles along the edge it was sent on.
+   Accounts joined by alerting transfers get pulled into a haloed
+   cluster — which is the point: a chain, a cycle and a fan-out are
+   different shapes, and the shape is the evidence.
+   ═══════════════════════════════════════════════════════════════════ */
+const Net = {
+  cv:null, ctx:null, W:0, H:0, dpr:1,
+  nodes:new Map(), edges:new Map(), parts:[], clusters:[], inCluster:new Set(),
+  clock:0, cAcc:0, hover:null, focus:null,
+  MAXN:150, BASE_TTL:6, BASE_TTL2:26, BASE_HOT:16,
+  TTL:6, TTL2:26, HOT:16,
+  rescale(){
+    const k = clamp(3600/S.speed, 0.14, 1.8);
+    this.TTL=this.BASE_TTL*k; this.TTL2=this.BASE_TTL2*k; this.HOT=this.BASE_HOT*k;
+  },
+
+  init(){
+    this.cv=$('#cv'); this.ctx=this.cv.getContext('2d');
+    new ResizeObserver(()=>this.size()).observe($('#net'));
+    this.size();
+    this.cv.addEventListener('mousemove', e=>{
+      const r=this.cv.getBoundingClientRect();
+      this.mx=e.clientX-r.left; this.my=e.clientY-r.top; this.pick();
+    });
+    this.cv.addEventListener('mouseleave', ()=>{this.hover=null; $('#tip').style.display='none';});
+  },
+  size(){
+    const b=$('#net').getBoundingClientRect();
+    this.dpr=Math.min(devicePixelRatio||1, 2);
+    this.W=Math.max(b.width,10); this.H=Math.max(b.height,10);
+    this.cv.width=this.W*this.dpr; this.cv.height=this.H*this.dpr;
+    this.ctx.setTransform(this.dpr,0,0,this.dpr,0,0);
+  },
+  reset(){ this.nodes.clear(); this.edges.clear(); this.parts.length=0;
+    this.clusters.length=0; this.inCluster.clear(); this.focus=null; },
+
+  node(i){
+    let n=this.nodes.get(i);
+    if(!n){
+      const a=Math.random()*Math.PI*2, rr=Math.min(this.W,this.H)*0.3*Math.sqrt(Math.random());
+      n={i, x:this.W/2+Math.cos(a)*rr, y:this.H/2+Math.sin(a)*rr, vx:0, vy:0,
+         seen:this.clock, vol:0, deg:0, tier:0, alerts:0, alertAt:-1e9,
+         score:S.acct.score[i], flagged:S.acct.flagged[i]};
+      this.nodes.set(i,n);
+    }
+    n.seen=this.clock; return n;
+  },
+
+  feed(e,t){
+    const a=this.node(e[SRC]), b=this.node(e[DST]);
+    a.vol+=e[AMT]; b.vol+=e[AMT]; a.deg++; b.deg++;
+    a.tier=t; b.tier=t;
+    if(t===2){ a.alerts++; b.alerts++; a.alertAt=b.alertAt=this.clock; }
+
+    const k=e[SRC]+'>'+e[DST];
+    let ed=this.edges.get(k);
+    if(!ed){ ed={a:e[SRC], b:e[DST], n:0, tier:0, seen:0, truth:0}; this.edges.set(k,ed); }
+    ed.n++; ed.seen=this.clock; ed.tier=Math.max(ed.tier,t); ed.truth=Math.max(ed.truth,e[TRUTH]);
+
+    if(reduced || S.view!=='net') return;
+    if(this.parts.length < 700)
+      this.parts.push({a:e[SRC], b:e[DST], p:0, t, w:clamp(Math.log10(e[AMT]+10)-1, .6, 3.4)});
+    else if(t===2)                              // an alert always gets drawn
+      this.parts.push({a:e[SRC], b:e[DST], p:0, t, w:3});
+  },
+
+  step(dt){
+    this.clock += dt; this.rescale();
+    const now=this.clock;
+
+    const hot = n => now - n.alertAt < this.TTL2;
+    for(const [k,e] of this.edges)
+      if(now - e.seen > (e.tier===2?this.TTL2:this.TTL)) this.edges.delete(k);
+
+    if(this.nodes.size > this.MAXN){
+      const cand=[...this.nodes.values()].filter(n=>!hot(n)).sort((a,b)=>a.seen-b.seen);
+      for(let i=0; i<cand.length && this.nodes.size>this.MAXN; i++) this.nodes.delete(cand[i].i);
+    }
+    for(const [i,n] of this.nodes)
+      if(now-n.seen > (hot(n)?this.TTL2:this.TTL*1.5)) this.nodes.delete(i);
+    for(const [k,e] of this.edges)                       // drop edges left dangling
+      if(!this.nodes.has(e.a) || !this.nodes.has(e.b)) this.edges.delete(k);
+
+    /* particles */
+    for(let i=this.parts.length-1;i>=0;i--){
+      const p=this.parts[i]; p.p += dt*0.85;
+      if(p.p>=1 || !this.nodes.has(p.a) || !this.nodes.has(p.b)) this.parts.splice(i,1);
+    }
+
+    /* force layout */
+    const arr=[...this.nodes.values()], N=arr.length;
+    if(!N) return;
+    const cx=this.W/2, cy=this.H/2, spread=Math.min(this.W,this.H);
+    for(let i=0;i<N;i++){
+      const a=arr[i];
+      for(let j=i+1;j<N;j++){
+        const b=arr[j];
+        let dx=b.x-a.x, dy=b.y-a.y, d2=dx*dx+dy*dy;
+        if(d2>62000 || d2<0.01) continue;
+        const d=Math.sqrt(d2), f=2100/(d2+70);
+        dx/=d; dy/=d;
+        a.vx-=dx*f; a.vy-=dy*f; b.vx+=dx*f; b.vy+=dy*f;
+      }
+      a.vx += (cx-a.x)*0.0009; a.vy += (cy-a.y)*0.0009;
+    }
+    for(const e of this.edges.values()){
+      const a=this.nodes.get(e.a), b=this.nodes.get(e.b);
+      if(!a||!b) continue;
+      const dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||1;
+      const rest = e.tier===2 ? 62 : 104;
+      const f = (d-rest)*(e.tier===2 ? 0.011 : 0.0042);
+      a.vx += dx/d*f; a.vy += dy/d*f; b.vx -= dx/d*f; b.vy -= dy/d*f;
+    }
+    const damp = reduced ? 0.5 : 0.86, pad=26;
+    for(const n of arr){
+      n.vx*=damp; n.vy*=damp;
+      n.x += clamp(n.vx, -14, 14); n.y += clamp(n.vy, -14, 14);
+      n.x = clamp(n.x, pad, this.W-pad); n.y = clamp(n.y, pad, this.H-pad);
+      if(!Number.isFinite(n.x)) n.x=cx; if(!Number.isFinite(n.y)) n.y=cy;
+    }
+
+    this.cAcc += dt;
+    if(this.cAcc > 0.4){ this.cAcc=0; this.cluster(); }
+  },
+
+  /* connected components over alerting edges only — model signal, not labels */
+  cluster(){
+    const par=new Map();
+    const find=x=>{ while(par.get(x)!==x){ par.set(x,par.get(par.get(x))); x=par.get(x);} return x; };
+    const uni=(a,b)=>{ if(!par.has(a))par.set(a,a); if(!par.has(b))par.set(b,b);
+      const ra=find(a), rb=find(b); if(ra!==rb) par.set(ra,rb); };
+    for(const e of this.edges.values())
+      if(e.tier===2 && this.nodes.has(e.a) && this.nodes.has(e.b)) uni(e.a,e.b);
+    const g=new Map();
+    for(const k of par.keys()){
+      const r=find(k);
+      if(!g.has(r)) g.set(r,[]);
+      g.get(r).push(k);
+    }
+    this.clusters=[...g.values()].filter(m=>m.length>=4)
+      .sort((a,b)=>b.length-a.length).slice(0,4).map(m=>({m}));
+    this.inCluster = new Set();
+    for(const cl of this.clusters) for(const i of cl.m) this.inCluster.add(i);
+  },
+
+  colr(t,a=1){
+    return t===2?`rgba(255,71,103,${a})` : t===1?`rgba(242,174,60,${a})` : `rgba(53,214,174,${a})`;
+  },
+
+  draw(){
+    const c=this.ctx, now=this.clock;
+    c.clearRect(0,0,this.W,this.H);
+    if(!this.nodes.size){
+      c.fillStyle='#55658A'; c.font=CFONT; c.textAlign='center';
+      c.fillText(S.playing?'Waiting for traffic…':'Press play to open the feed', this.W/2, this.H/2);
+      c.textAlign='left'; return;
+    }
+
+    /* cluster halos */
+    for(const cl of this.clusters){
+      let x=0,y=0,k=0;
+      for(const i of cl.m){ const n=this.nodes.get(i); if(n){x+=n.x;y+=n.y;k++;} }
+      if(k<4) continue;
+      x/=k; y/=k;
+      let r=0;
+      for(const i of cl.m){ const n=this.nodes.get(i); if(n) r=Math.max(r,Math.hypot(n.x-x,n.y-y)); }
+      r+=30;
+      if(r > Math.min(this.W,this.H)*0.34) continue;
+      const g=c.createRadialGradient(x,y,r*0.35,x,y,r);
+      g.addColorStop(0,'rgba(255,71,103,0.07)'); g.addColorStop(1,'rgba(255,71,103,0)');
+      c.fillStyle=g; c.beginPath(); c.arc(x,y,r,0,6.284); c.fill();
+      c.strokeStyle='rgba(255,71,103,0.34)'; c.lineWidth=1; c.setLineDash([3,4]);
+      c.beginPath(); c.arc(x,y,r,0,6.284); c.stroke(); c.setLineDash([]);
+      c.fillStyle='rgba(255,71,103,0.85)'; c.font=CFONT_B;
+      c.fillText(`CLUSTER · ${k} ACCOUNTS`, clamp(x-r+6, 8, this.W-140), clamp(y-r+14, 16, this.H-8));
+    }
+
+    /* edges */
+    c.lineCap='round';
+    for(const e of this.edges.values()){
+      const a=this.nodes.get(e.a), b=this.nodes.get(e.b);
+      if(!a||!b) continue;
+      const age=(now-e.seen)/(e.tier===2?this.TTL2:this.TTL);
+      const o=clamp(1-age,0,1);
+      if(S.truth && e.truth){
+        c.strokeStyle=`rgba(168,123,255,${0.5*o+0.12})`; c.lineWidth=3.2;
+        c.beginPath(); c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.stroke();
+      }
+      c.strokeStyle=this.colr(e.tier, (e.tier===2?0.55:e.tier===1?0.34:0.16)*o+0.03);
+      c.lineWidth = e.tier===2?1.5:0.85;
+      c.beginPath(); c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.stroke();
+    }
+
+    /* money in flight */
+    for(const p of this.parts){
+      const a=this.nodes.get(p.a), b=this.nodes.get(p.b);
+      if(!a||!b) continue;
+      const e=p.p*p.p*(3-2*p.p);
+      const x=a.x+(b.x-a.x)*e, y=a.y+(b.y-a.y)*e;
+      const fade=Math.sin(p.p*Math.PI);
+      if(p.t===2){
+        c.fillStyle=`rgba(255,71,103,${0.18*fade})`;
+        c.beginPath(); c.arc(x,y,p.w*3.4,0,6.284); c.fill();
+      }
+      c.fillStyle=this.colr(p.t, 0.55+0.45*fade);
+      c.beginPath(); c.arc(x,y,p.w,0,6.284); c.fill();
+    }
+
+    /* nodes */
+    for(const n of this.nodes.values()){
+      const hot = now - n.alertAt < this.HOT;
+      const tier = hot ? 2 : n.tier;
+      const r = clamp(2.6 + Math.log10(n.vol+10)*1.15 + (hot?1.8:0), 2.6, 11);
+      const o = clamp(1-(now-n.seen)/this.TTL, 0.4, 1);
+      if(hot && this.inCluster.has(n.i)){
+        const pulse = reduced?0:(Math.sin(now*3+n.i)*0.5+0.5);
+        c.strokeStyle=`rgba(255,71,103,${0.18+0.26*pulse})`; c.lineWidth=1.2;
+        c.beginPath(); c.arc(n.x,n.y,r+5+pulse*3,0,6.284); c.stroke();
+      }
+      c.fillStyle=this.colr(tier, o);
+      c.beginPath(); c.arc(n.x,n.y,r,0,6.284); c.fill();
+      if(this.hover===n.i || this.focus===n.i){
+        c.strokeStyle='rgba(228,234,248,0.9)'; c.lineWidth=1.5;
+        c.beginPath(); c.arc(n.x,n.y,r+4,0,6.284); c.stroke();
+        c.fillStyle='rgba(228,234,248,0.92)'; c.font=CFONT;
+        c.fillText(acctId(n.i), n.x+r+7, n.y+3.5);
+      }
+    }
+  },
+
+  pick(){
+    let best=null, bd=1e9;
+    for(const n of this.nodes.values()){
+      const d=Math.hypot(n.x-this.mx, n.y-this.my);
+      if(d<16 && d<bd){ bd=d; best=n; }
+    }
+    this.hover = best ? best.i : null;
+    const tip=$('#tip');
+    if(!best){ tip.style.display='none'; return; }
+    tip.style.display='block';
+    tip.style.left = Math.min(this.mx+16, this.W-215)+'px';
+    tip.style.top  = Math.min(this.my+16, this.H-125)+'px';
+    tip.innerHTML =
+      `<div class="h">${acctId(best.i)}</div>`+
+      `<div class="k"><span>Archetype</span><span>${S.meta.archetypes[S.acct.archetype[best.i]]}</span></div>`+
+      `<div class="k"><span>KYC</span><span>${S.meta.kyc_levels[S.acct.kyc[best.i]]}</span></div>`+
+      `<div class="k"><span>Seen here</span><span>${best.deg} txns</span></div>`+
+      `<div class="k"><span>Volume</span><span>${money(best.vol)}</span></div>`+
+      `<div class="k"><span>Account score</span><span style="color:${best.flagged?'var(--alert)':'var(--mid)'}">${best.score.toFixed(3)}</span></div>`+
+      `<div class="k"><span>Alerts here</span><span style="color:${best.alerts?'var(--alert)':'var(--mid)'}">${best.alerts}</span></div>`;
+  },
+};
+
+/* ═══ wiring ════════════════════════════════════════════════════════ */
+function setView(v){
+  S.view=v;
+  document.body.classList.toggle('net', v==='net');
+  $('#vLedger').setAttribute('aria-pressed', String(v==='ledger'));
+  $('#vNet').setAttribute('aria-pressed', String(v==='net'));
+  if(v==='net') Net.size();
+  else if(S.stuck) DOM.log.scrollTop = DOM.log.scrollHeight;
+}
+$('#vLedger').onclick=()=>setView('ledger');
+$('#vNet').onclick=()=>setView('net');
+$('#playBtn').onclick=()=>setPlay(!S.playing);
+$('#resetBtn').onclick=reset;
+$('#nextBtn').onclick=nextAlert;
+$('#speed').onchange=e=>{ S.speed=+e.target.value; };
+$('#filter').onchange=e=>{ S.filter=e.target.value; };
+$('#truthBtn').onclick=()=>{
+  S.truth=!S.truth;
+  document.body.classList.toggle('truth', S.truth);
+  $('#truthBtn').setAttribute('aria-pressed', String(S.truth));
+  $('#lgTruth').style.display = S.truth?'flex':'none';
+  renderAlerts(true);
+};
+$('#log').addEventListener('scroll', ()=>{
+  const el=DOM.log;
+  S.stuck = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  $('#jump').classList.toggle('on', !S.stuck);
+});
+$('#jump').onclick=()=>{ const el=$('#log'); el.scrollTop=el.scrollHeight; S.stuck=true; $('#jump').classList.remove('on'); };
+$('#alerts').addEventListener('click', e=>{
+  const el=e.target.closest('.al'); if(!el) return;
+  Net.focus=+el.dataset.a; setView('net');
+});
+$('#log').addEventListener('click', e=>{
+  const el=e.target.closest('.acct'); if(!el) return;
+  Net.focus=+el.dataset.a; setView('net');
+});
+addEventListener('keydown', e=>{
+  if(e.target.matches('input,select,textarea')) return;
+  const k=e.key.toLowerCase();
+  if(k===' '){ e.preventDefault(); setPlay(!S.playing); }
+  else if(k==='1') setView('ledger');
+  else if(k==='2') setView('net');
+  else if(k==='n') nextAlert();
+  else if(k==='g') $('#truthBtn').click();
+  else if(k==='r') reset();
+});
+
+load();
+</script>
+</body>
+</html>
