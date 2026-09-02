@@ -1,0 +1,25 @@
+# OPTIONAL dependencies. The system runs fully without these (graceful fallbacks
+# are implemented everywhere they are used). Install only if you want the extra
+# fidelity they provide.
+
+# Real OCR on synthetic document images (falls back to a rule-based field-consistency
+# simulator if not installed).
+pytesseract==0.3.13
+# NOTE: pytesseract also requires the `tesseract-ocr` system binary
+# (e.g. `apt install tesseract-ocr` / `brew install tesseract`).
+
+# Real (heuristic, zero-download) face-detection/liveness signal for the
+# Live KYC Form's webcam capture + document photo comparison. Falls back to
+# neutral placeholder scores if not installed -- see
+# backend/biometric/opencv_adapter.py.
+opencv-python-headless==4.10.0.84
+
+# Real face EMBEDDINGS (production-grade face matching) for the biometric
+# adapter (falls back to SyntheticFeatureAdapter / the OpenCV heuristic
+# adapter, which are the defaults even when this is installed).
+# insightface==0.7.3
+# onnxruntime==1.20.1
+
+# Local LLM client for the attack-discovery agent (falls back to a deterministic
+# rule-based discovery engine if Ollama is not running).
+# ollama==0.4.4
